@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+/* GET Function*/
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -41,6 +42,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
+
+/* UPDATE Function*/
 
 export async function PATCH(req: Request) {
   try {
@@ -88,3 +91,52 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
+
+/* DELETE Function*/
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get("user_id");
+
+    if (!userId) {
+      return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
+    }
+
+    // First, get the profile to know its ID
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("brand_profiles")
+      .select("id")
+      .eq("user_id", userId)
+      .single();
+
+    if (profileError) {
+      return NextResponse.json({ error: profileError.message }, { status: 500 });
+    }
+
+    // Delete guide(s) linked to that profile
+    const { error: guideError } = await supabaseAdmin
+      .from("brand_guides")
+      .delete()
+      .eq("profile_id", profile.id);
+
+    if (guideError) {
+      return NextResponse.json({ error: guideError.message }, { status: 500 });
+    }
+
+    // Delete the brand profile itself
+    const { error: profileDeleteError } = await supabaseAdmin
+      .from("brand_profiles")
+      .delete()
+      .eq("user_id", userId);
+
+    if (profileDeleteError) {
+      return NextResponse.json({ error: profileDeleteError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, message: "Brand profile and guide deleted" });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+

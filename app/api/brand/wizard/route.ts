@@ -17,7 +17,7 @@ export async function POST(req: Request) {
       colors: body.colors ?? {},
       fonts: body.fonts ?? {},
       positioning: body.positioning ?? null,
-      tagline: body.tagline ?? null
+      tagline_or_slogan: body.tagline_or_slogan ?? null
     };
 
     const { data, error } = await supabaseAdmin.from('brand_profiles').insert([insert]).select().single();
