@@ -1,142 +1,71 @@
-// app/api/brand/profile/route.ts
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { createRouteClient } from "@/lib/supabaseServer";
 
-/* GET Function*/
-export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("user_id");
-
-    if (!userId) {
-      return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
-    }
-
-    // Get brand profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("brand_profiles")
-      .select("*")
-      .eq("user_id", userId)
-      .single();
-
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 500 });
-    }
-
-    // Get brand guide linked to this profile
-    const { data: guide, error: guideError } = await supabaseAdmin
-      .from("brand_guides")
-      .select("*")
-      .eq("profile_id", profile.id)
-      .maybeSingle();
-
-    if (guideError) {
-      return NextResponse.json({ error: guideError.message }, { status: 500 });
-    }
-
-    return NextResponse.json({
-      profile,
-      guide,
-    });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
+function getToken(req: Request) {
+  const authHeader = req.headers.get("authorization");
+  return authHeader?.replace("Bearer ", "");
 }
 
-/* UPDATE Function*/
+async function getUserFromRequest(req: Request) {
+  const supabase = createRouteClient(getToken(req));
+  const { data: { user }, error } = await supabase.auth.getUser();
+  return { supabase, user, error };
+}
+
+export async function GET(req: Request) {
+  const { supabase, user, error } = await getUserFromRequest(req);
+  if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { data, error: err } = await supabase
+    .from("brand_profiles")
+    .select("*")
+    .eq("user_id", user.id)
+    .single();
+
+  if (err) return NextResponse.json({ error: err.message }, { status: 500 });
+  return NextResponse.json({ profile: data });
+}
+
+export async function POST(req: Request) {
+  const { supabase, user, error } = await getUserFromRequest(req);
+  if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json();
+  const { data, error: err } = await supabase
+    .from("brand_profiles")
+    .insert([{ ...body, user_id: user.id }])
+    .select()
+    .single();
+
+  if (err) return NextResponse.json({ error: err.message }, { status: 500 });
+  return NextResponse.json({ profile: data });
+}
 
 export async function PATCH(req: Request) {
-  try {
-    const body = await req.json();
-    const { user_id, profile_updates, guide_updates } = body;
+  const { supabase, user, error } = await getUserFromRequest(req);
+  if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    if (!user_id) {
-      return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
-    }
+  const body = await req.json();
+  const { data, error: err } = await supabase
+    .from("brand_profiles")
+    .update(body)
+    .eq("user_id", user.id)
+    .select()
+    .single();
 
-    // Update profile
-    let updatedProfile = null;
-    if (profile_updates) {
-      const { data, error } = await supabaseAdmin
-        .from("brand_profiles")
-        .update(profile_updates)
-        .eq("user_id", user_id)
-        .select()
-        .single();
-
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      updatedProfile = data;
-    }
-
-    // Update guide
-    let updatedGuide = null;
-    if (guide_updates && updatedProfile) {
-      const { data, error } = await supabaseAdmin
-        .from("brand_guides")
-        .update(guide_updates)
-        .eq("profile_id", updatedProfile.id)
-        .select()
-        .maybeSingle();
-
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      updatedGuide = data;
-    }
-
-    return NextResponse.json({
-      ok: true,
-      profile: updatedProfile,
-      guide: updatedGuide,
-    });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
+  if (err) return NextResponse.json({ error: err.message }, { status: 500 });
+  return NextResponse.json({ profile: data });
 }
-
-/* DELETE Function*/
 
 export async function DELETE(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("user_id");
+  const { supabase, user, error } = await getUserFromRequest(req);
+  if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    if (!userId) {
-      return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
-    }
+  const { error: err } = await supabase
+    .from("brand_profiles")
+    .delete()
+    .eq("user_id", user.id);
 
-    // First, get the profile to know its ID
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("brand_profiles")
-      .select("id")
-      .eq("user_id", userId)
-      .single();
-
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 500 });
-    }
-
-    // Delete guide(s) linked to that profile
-    const { error: guideError } = await supabaseAdmin
-      .from("brand_guides")
-      .delete()
-      .eq("profile_id", profile.id);
-
-    if (guideError) {
-      return NextResponse.json({ error: guideError.message }, { status: 500 });
-    }
-
-    // Delete the brand profile itself
-    const { error: profileDeleteError } = await supabaseAdmin
-      .from("brand_profiles")
-      .delete()
-      .eq("user_id", userId);
-
-    if (profileDeleteError) {
-      return NextResponse.json({ error: profileDeleteError.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ ok: true, message: "Brand profile and guide deleted" });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
+  if (err) return NextResponse.json({ error: err.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }
-

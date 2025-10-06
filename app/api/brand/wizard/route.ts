@@ -1,32 +1,71 @@
-// app/api/brand/wizard/route.ts
-import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { NextResponse } from "next/server";
+import { createRouteClient } from "@/lib/supabaseServer";
+
+function getToken(req: Request) {
+  const authHeader = req.headers.get("authorization");
+  return authHeader?.replace("Bearer ", "");
+}
+
+async function getUserFromRequest(req: Request) {
+  const supabase = createRouteClient(getToken(req));
+  const { data: { user }, error } = await supabase.auth.getUser();
+  return { supabase, user, error };
+}
+
+export async function GET(req: Request) {
+  const { supabase, user, error } = await getUserFromRequest(req);
+  if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { data, error: err } = await supabase
+    .from("brand_guides")
+    .select("*")
+    .eq("user_id", user.id)
+    .single();
+
+  if (err) return NextResponse.json({ error: err.message }, { status: 500 });
+  return NextResponse.json({ guide: data });
+}
 
 export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    // body must include user_id (from client after auth), display_name, mission, etc.
-    const insert = {
-      user_id: body.user_id,
-      display_name: body.display_name,
-      bio: body.bio ?? null,
-      tone: body.tone ?? null,
-      mission: body.mission ?? null,
-      vision: body.vision ?? null,
-      values_json: body.values ?? {},
-      colors: body.colors ?? {},
-      fonts: body.fonts ?? {},
-      positioning: body.positioning ?? null,
-      tagline_or_slogan: body.tagline_or_slogan ?? null
-    };
+  const { supabase, user, error } = await getUserFromRequest(req);
+  if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { data, error } = await supabaseAdmin.from('brand_profiles').insert([insert]).select().single();
+  const body = await req.json();
+  const { data, error: err } = await supabase
+    .from("brand_guides")
+    .insert([{ ...body, user_id: user.id }])
+    .select()
+    .single();
 
-    if (error) return NextResponse.json({ error }, { status: 500 });
-    // optionally create a brand_guide row
-    await supabaseAdmin.from('brand_guides').insert([{ user_id: insert.user_id, profile_id: data.id, html: body.html ?? null }]);
-    return NextResponse.json({ ok: true, profile: data });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
+  if (err) return NextResponse.json({ error: err.message }, { status: 500 });
+  return NextResponse.json({ guide: data });
+}
+
+export async function PATCH(req: Request) {
+  const { supabase, user, error } = await getUserFromRequest(req);
+  if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json();
+  const { data, error: err } = await supabase
+    .from("brand_guides")
+    .update(body)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+
+  if (err) return NextResponse.json({ error: err.message }, { status: 500 });
+  return NextResponse.json({ guide: data });
+}
+
+export async function DELETE(req: Request) {
+  const { supabase, user, error } = await getUserFromRequest(req);
+  if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { error: err } = await supabase
+    .from("brand_guides")
+    .delete()
+    .eq("user_id", user.id);
+
+  if (err) return NextResponse.json({ error: err.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }
